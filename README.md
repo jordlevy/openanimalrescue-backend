@@ -37,4 +37,4 @@ I welcome contributions from the community! If you have ideas, feedback, or code
 
 ### Acknowledgements
 
-This project is powered by Serverless. 💪 A huge thanks to their team for their amazing work in making serverless applications accessible and efficient.
+This project is powered by AWS CDK. 💪 A huge thanks to their team for their amazing work in making serverless applications accessible and efficient.
