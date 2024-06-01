@@ -17,3 +17,9 @@
 # CDK asset staging directory
 .cdk.staging
 cdk.out
+
+# Exclude all files in the bin directory
+openanimalrescue-api/bin/**
+
+# Include specific files named bootstrap in the bin directory and its subdirectories
+!openanimalrescue-api/bin/**/bootstrap
