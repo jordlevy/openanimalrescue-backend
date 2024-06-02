@@ -31,23 +31,23 @@ When working on a new route, you need to create a corresponding bootstrap file. 
 
 For example, if you're working on the `/health` route, your bootstrap file would look like this:
 
-\`\`\`sh
+```sh
 #!/bin/sh
 ./health
-\`\`\`
+```
 
 At some point, I will create a library of these in the repo so it becomes a copy-paste job.
 
-## 🚀 Sort the Bootstrap Files 🚀
+## 🚀 Deploying 🚀
 
 1. **🔄 Clone the Repository**: \`git clone git@github.com:jordlevy/openanimalrescue-backend.git\`
 2. **📦 Install Serverless Framework**: \`npm install -g aws-cdk\`
 3. **🚀 Deploy to AWS**: 
-    \`\`\`bash
+    ```bash
     cd openanimalrescue-api
     #cdk bootstrap aws://<your target AWS account ID here>/<your preferred region here> (only if needed)
     cdk deploy
-    \`\`\`
+    ```
 
 ### Contributions
 
