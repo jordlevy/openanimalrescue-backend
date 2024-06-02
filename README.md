@@ -46,6 +46,7 @@ At some point, I will create a library of these in the repo so it becomes a copy
     ```bash
     cd openanimalrescue-api
     #cdk bootstrap aws://<your target AWS account ID here>/<your preferred region here> (only if needed)
+    #i.e. cdk bootstrap aws://111222333/eu-west-1
     cdk deploy
     ```
 
