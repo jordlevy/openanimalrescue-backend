@@ -13,7 +13,7 @@ Welcome to **openAnimalRescue**! 🐶🐱 An open-source project dedicated to em
 
 **openAnimalRescue** is built using the AWS CDK framework and Go, making it a robust and scalable backend solution. This is the main element of the project, driving whichever frontend you choose to integrate with it. The beauty here is that they're separate concerns. You can spin up a backend and tackle whichever frontend element you want in whichever order suits you.
 
-The data layer is Postgres. Initially, I considered NoSQL, but I quickly realized that this project is going to be very relation-driven. My preference with relational data is Postgres, so that's what I'll be going ahead with.
+The data layer is Postgres. Initially, I considered NoSQL, but I quickly realised that this project is going to be very relation-driven. My preference with relational data is Postgres, so that's what I'll be going ahead with. Of course contributors who have ideas on how to do this using a different database or in NoSQL are welcome to make suggestions, as the project grows we can always make this configuration driven. For now we go with the elephant 🐘
 
 ### Key Features
 
