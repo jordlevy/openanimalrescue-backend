@@ -1,0 +1,15 @@
+{
+  "name": "shared-utils",
+  "version": "0.1.0",
+  "description": "Shared utils for openAnimalRescue Lambdas.",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@aws-sdk/client-secrets-manager": "^3.645.0",
+    "axios": "^1.7.7"
+  }
+}
