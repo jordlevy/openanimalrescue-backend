@@ -78,12 +78,14 @@ const logQueryDetails = (species: string | null, breed: string | null, name: str
           animals = result.Items.map((item) => unmarshall(item) as Animal);
         }
   
-        // Apply further filtering for breed and name in Lambda (in-memory)
-        if (breed) {
-          animals = animals.filter(animal => animal.breed.toLowerCase() === breed);
-        }
-        if (name) {
-          animals = animals.filter(animal => animal.name.toLowerCase() === name);
+        // Apply further filtering for breed and name.
+        if (animals.length > 0) {
+          if (breed) {
+            animals = animals.filter(animal => animal.breed.toLowerCase() === breed);
+          }
+          if (name) {
+            animals = animals.filter(animal => animal.name.toLowerCase() === name);
+          }
         }
   
       // Case 3: Query by breed only (if species not provided)
@@ -148,6 +150,7 @@ const logQueryDetails = (species: string | null, breed: string | null, name: str
       }
   
     } catch (error) {
+      console.error("Error occurred:", error);
       let errorMessage = "An unknown error occurred";
       if (error instanceof Error) {
         errorMessage = error.message;
@@ -157,8 +160,8 @@ const logQueryDetails = (species: string | null, breed: string | null, name: str
         body: JSON.stringify({
           success: false, 
           query: event.queryStringParameters,
-          error: errorMessage }),
+          error: errorMessage
+        }),
       };
     }
   };
-  
