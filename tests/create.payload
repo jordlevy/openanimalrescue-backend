@@ -1,0 +1,15 @@
+{
+  "species": "dog",
+  "breed": "labrador",
+  "name": "Goldy",
+  "age": 2,
+  "gender": "Male",
+  "goodWithCats": "Unknown",
+  "goodWithDogs": "Yes",
+  "goodWithChildren": "Yes",
+  "goodWithPeople": "Yes",
+  "houseTrained": "Yes",
+  "specialNeeds": "None",
+  "headline": "Fluffy, energetic, and looking for a home",
+  "bio": "I am a fluffy busy boy! I have energy for days and love to play. I'm looking for a home where I can run and have fun!"
+}

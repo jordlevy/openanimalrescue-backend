@@ -8,6 +8,7 @@ const dynamoDb = new DynamoDBClient({});
 const ssmClient = new SSMClient({});
 const TABLE_NAME = process.env.TABLE_NAME || "";
 const SPECIES_LIST_SSM_PARAM = process.env.SPECIES_LIST_SSM_PARAM || "";
+const SPECIES_INDEX = "species-index";  // New GSI for querying by species
 
 export const handler = async (event: any) => {
   try {
@@ -15,36 +16,18 @@ export const handler = async (event: any) => {
     const speciesParam = await ssmClient.send(
       new GetParameterCommand({ Name: SPECIES_LIST_SSM_PARAM })
     );
-    const speciesList: string[] = JSON.parse(
-      speciesParam.Parameter?.Value || "[]"
-    ).map((s: string) => s.toLowerCase());
+    const speciesList: string[] = JSON.parse(speciesParam.Parameter?.Value || "[]").map((s: string) => s.toLowerCase());
 
     const pathParams = event.pathParameters || {};
-    const speciesParamValue = pathParams.species
-      ? pathParams.species.toLowerCase()
-      : null;
+    const speciesParamValue = pathParams.species ? pathParams.species.toLowerCase() : null;
 
     let animals: Animal[] = [];
 
-    // Case 1: No species parameter provided, fetch all animals
-    if (!speciesParamValue) {
+    // Case 1: Species parameter provided, validate and query by species
+    if (speciesParamValue && speciesList.includes(speciesParamValue)) {
       const params = {
         TableName: TABLE_NAME,
-        IndexName: "species-index", // Use the GSI to query by breed
-      };
-
-      const command = new QueryCommand(params);
-      const result = await dynamoDb.send(command);
-
-      if (result.Items && result.Items.length > 0) {
-        animals = result.Items.map((item) => unmarshall(item) as Animal);
-      }
-
-      // Case 2: Species parameter provided, validate and query by species (Sort Key)
-    } else if (speciesList.includes(speciesParamValue)) {
-      const params = {
-        TableName: TABLE_NAME,
-        IndexName: "species-index", // Use the GSI to query by breed
+        IndexName: SPECIES_INDEX,  // Use the GSI for species
         KeyConditionExpression: "SK = :species",
         ExpressionAttributeValues: {
           ":species": { S: speciesParamValue },
@@ -58,15 +41,25 @@ export const handler = async (event: any) => {
         animals = result.Items.map((item) => unmarshall(item) as Animal);
       }
 
-      // Case 3: Invalid species parameter
-    } else {
-      return {
-        statusCode: 400,
-        body: JSON.stringify({
-          success: false,
-          error: `Invalid species parameter: ${speciesParamValue}`,
-        }),
-      };
+    // Case 2: No species parameter provided, query all species
+    } else if (!speciesParamValue) {
+      for (const species of speciesList) {
+        const params = {
+          TableName: TABLE_NAME,
+          IndexName: SPECIES_INDEX,  // Use the GSI for species
+          KeyConditionExpression: "SK = :species",
+          ExpressionAttributeValues: {
+            ":species": { S: species },
+          },
+        };
+
+        const command = new QueryCommand(params);
+        const result = await dynamoDb.send(command);
+
+        if (result.Items && result.Items.length > 0) {
+          animals.push(...result.Items.map((item) => unmarshall(item) as Animal));
+        }
+      }
     }
 
     // Return animals if found
@@ -80,12 +73,11 @@ export const handler = async (event: any) => {
         statusCode: 404,
         body: JSON.stringify({
           success: false,
-          error: speciesParamValue
-            ? `No animals found for species: ${speciesParamValue}`
-            : "No animals found.",
+          error: speciesParamValue ? `No animals found for species: ${speciesParamValue}` : "No animals found.",
         }),
       };
     }
+
   } catch (error) {
     let errorMessage = "An unknown error occurred";
     if (error instanceof Error) {

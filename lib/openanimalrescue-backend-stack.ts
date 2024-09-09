@@ -135,7 +135,7 @@ export class OpenanimalrescueBackendStack extends cdk.Stack {
 
     // Global Secondary Index (GSI) for animals to query by UUID
     animalsTable.addGlobalSecondaryIndex({
-      indexName: "species-index",  // Index name for breed GSI
+      indexName: "breed-index",  // Index name for breed GSI
       partitionKey: { name: "breed", type: dynamodb.AttributeType.STRING }, // GSI PK: breed
       projectionType: dynamodb.ProjectionType.ALL,  // Project all attributes
     });
@@ -144,6 +144,12 @@ export class OpenanimalrescueBackendStack extends cdk.Stack {
       indexName: "name-index",  // Name of the index for querying by name
       partitionKey: { name: "name", type: dynamodb.AttributeType.STRING }, // GSI PK: name
       projectionType: dynamodb.ProjectionType.ALL,  // Project all attributes
+    });
+  
+    animalsTable.addGlobalSecondaryIndex({
+      indexName: "species-index",
+      partitionKey: { name: "SK", type: dynamodb.AttributeType.STRING }, // SK (species)
+      projectionType: dynamodb.ProjectionType.ALL,
     });
 
     // Events Table
@@ -180,16 +186,16 @@ export class OpenanimalrescueBackendStack extends cdk.Stack {
     });
     this.addTags(s3Bucket, "s3");
 
+    // SSM Parameter for species list
     const speciesListParam = new ssm.StringParameter(
       this,
       resourceName("species-list-ssm"),
       {
         parameterName: resourceName("species-list"),
-        stringValue: JSON.stringify(["dog", "cat", "rabbit"]), //Default list of species, please update as needed
+        stringValue: JSON.stringify(["dog", "cat", "rabbit"]), // Default list of species, update as needed
         description: "A list of species used in the system",
       }
     );
-
     this.addTags(speciesListParam, "ssm-species-list");
 
     // API Gateway setup
@@ -217,7 +223,7 @@ export class OpenanimalrescueBackendStack extends cdk.Stack {
       description: "Shared types for Node.js Lambda functions",
     });
 
-    // Health Lambda function using the helper
+    // Health Lambda function
     const healthLambda = this.createLambda(
       api,
       animalsTable,
@@ -231,60 +237,44 @@ export class OpenanimalrescueBackendStack extends cdk.Stack {
       }
     );
 
-    // Create the main CRUD Lambdas
-    const createAnimalLambda = this.createLambda(
-      api,
-      animalsTable,
-      "createAnimal",
-      "POST",
-      "animals",
-      [sharedUtilsLayer, sharedTypesLayer], // Both layers
-      {
-        SPECIES_LIST_SSM_PARAM: speciesListParam.parameterName,
-      }
-    );
-    createAnimalLambda.addToRolePolicy(
-      new iam.PolicyStatement({
-        actions: ["ssm:GetParameter", "ssm:GetParameters"],
-        resources: [speciesListParam.parameterArn],
-      })
-    );
-
-    const getAnimalsLambda = this.createLambda(
-      api,
-      animalsTable,
-      "getAnimals",
-      "GET",
-      "animals",
-      [sharedUtilsLayer, sharedTypesLayer], // Both layers
-      {
-        SPECIES_LIST_SSM_PARAM: speciesListParam.parameterName,
-      }
-    );
-    getAnimalsLambda.addToRolePolicy(
-      new iam.PolicyStatement({
-        actions: ["ssm:GetParameter", "ssm:GetParameters"],
-        resources: [speciesListParam.parameterArn],
-      })
-    );
-
+    // Create the main CRUD Lambdas for individual animals
     const getAnimalLambda = this.createLambda(
       api,
       animalsTable,
       "getAnimal",
       "GET",
-      "animals/{uuid}",
+      "animal/{uuid}",
       [sharedUtilsLayer, sharedTypesLayer],
       {
         SPECIES_LIST_SSM_PARAM: speciesListParam.parameterName,
       }
     );
+
+    const createAnimalLambda = this.createLambda(
+      api,
+      animalsTable,
+      "createAnimal",
+      "POST",
+      "animal/{uuid}",
+      [sharedUtilsLayer, sharedTypesLayer],
+      {
+        SPECIES_LIST_SSM_PARAM: speciesListParam.parameterName,
+      }
+    );
+    // Add required permissions for SSM Parameter access
+    createAnimalLambda.addToRolePolicy(
+      new iam.PolicyStatement({
+        actions: ["ssm:GetParameter", "ssm:GetParameters"],
+        resources: [speciesListParam.parameterArn], // Ensure correct parameter ARN
+      })
+    );
+
     const updateAnimalLambda = this.createLambda(
       api,
       animalsTable,
       "updateAnimal",
       "PATCH",
-      "animals/{uuid}",
+      "animal/{uuid}",
       [sharedUtilsLayer, sharedTypesLayer],
       {
         SPECIES_LIST_SSM_PARAM: speciesListParam.parameterName,
@@ -295,11 +285,30 @@ export class OpenanimalrescueBackendStack extends cdk.Stack {
       animalsTable,
       "deleteAnimal",
       "DELETE",
-      "animals/{uuid}",
+      "animal/{uuid}",
       [sharedUtilsLayer, sharedTypesLayer],
       {
         SPECIES_LIST_SSM_PARAM: speciesListParam.parameterName,
       }
+    );
+
+    // Species-based animals routes (now under /species/{species}/animals)
+    const getAnimalsBySpeciesLambda = this.createLambda(
+      api,
+      animalsTable,
+      "getAnimals",
+      "GET",
+      "species/{species}/animals", // New unified route for filtering by species
+      [sharedUtilsLayer, sharedTypesLayer],
+      {
+        SPECIES_LIST_SSM_PARAM: speciesListParam.parameterName,
+      }
+    );
+    getAnimalsBySpeciesLambda.addToRolePolicy(
+      new iam.PolicyStatement({
+        actions: ["ssm:GetParameter", "ssm:GetParameters"],
+        resources: [speciesListParam.parameterArn],
+      })
     );
 
     // Output resources created
