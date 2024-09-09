@@ -36,15 +36,32 @@ const logQueryDetails = (species: string | null, breed: string | null, name: str
       let animals: Animal[] = [];
       let params;
 
+      // If no query parameters are provided, return an error
       if (!species && !breed && !name) {
         return {
           statusCode: 400,
-          body: JSON.stringify({ success: false, error: "Please provide at least one query parameter (species, breed, or name)." }),
+          body: JSON.stringify({
+            success: false,
+            query: queryParams,
+            error: "Please provide at least one query parameter (species, breed, or name)." }),
+        };
+      }
+      
+      // Case 1: Validate species and return error if not valid
+      if (species && !speciesList.includes(species)) {
+        return {
+          statusCode: 400,
+          body: JSON.stringify({
+            success: false,
+            query: queryParams,
+            error: `Invalid species '${species}' provided. Here are the valid species:`,
+            validSpecies: speciesList,
+          }),
         };
       }
   
-      // Case 1: Query by species
-      if (species && speciesList.includes(species)) {
+      // Case 2: Query by species if valid
+      if (species) {
         params = {
           TableName: TABLE_NAME,
           IndexName: SPECIES_INDEX,
@@ -69,7 +86,7 @@ const logQueryDetails = (species: string | null, breed: string | null, name: str
           animals = animals.filter(animal => animal.name.toLowerCase() === name);
         }
   
-      // Case 2: Query by breed only (if species not provided)
+      // Case 3: Query by breed only (if species not provided)
       } else if (breed) {
         params = {
           TableName: TABLE_NAME,
@@ -92,7 +109,7 @@ const logQueryDetails = (species: string | null, breed: string | null, name: str
           animals = animals.filter(animal => animal.name.toLowerCase() === name);
         }
   
-      // Case 3: Query by name only (if neither species nor breed is provided)
+      // Case 4: Query by name only (if neither species nor breed is provided)
       } else if (name) {
         params = {
           TableName: TABLE_NAME,
@@ -115,12 +132,18 @@ const logQueryDetails = (species: string | null, breed: string | null, name: str
       if (animals.length > 0) {
         return {
           statusCode: 200,
-          body: JSON.stringify({ success: true, data: animals }),
+          body: JSON.stringify({
+            success: true, 
+            query: queryParams,
+            data: animals }),
         };
       } else {
         return {
           statusCode: 404,
-          body: JSON.stringify({ success: false, error: "No animals found." }),
+          body: JSON.stringify({
+            success: false, 
+            query: queryParams,
+            error: "No animals found." }),
         };
       }
   
@@ -131,7 +154,10 @@ const logQueryDetails = (species: string | null, breed: string | null, name: str
       }
       return {
         statusCode: 500,
-        body: JSON.stringify({ success: false, error: errorMessage }),
+        body: JSON.stringify({
+          success: false, 
+          query: event.queryStringParameters,
+          error: errorMessage }),
       };
     }
   };
