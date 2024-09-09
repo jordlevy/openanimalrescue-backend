@@ -293,18 +293,18 @@ export class OpenanimalrescueBackendStack extends cdk.Stack {
     );
 
     // Species-based animals routes (now under /species/{species}/animals)
-    const getAnimalsBySpeciesLambda = this.createLambda(
+    const getAnimalsLambda = this.createLambda(
       api,
       animalsTable,
       "getAnimals",
       "GET",
-      "species/{species}/animals", // New unified route for filtering by species
+      "animals",
       [sharedUtilsLayer, sharedTypesLayer],
       {
         SPECIES_LIST_SSM_PARAM: speciesListParam.parameterName,
       }
     );
-    getAnimalsBySpeciesLambda.addToRolePolicy(
+    getAnimalsLambda.addToRolePolicy(
       new iam.PolicyStatement({
         actions: ["ssm:GetParameter", "ssm:GetParameters"],
         resources: [speciesListParam.parameterArn],
