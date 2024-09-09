@@ -8,13 +8,25 @@ const TABLE_NAME = process.env.TABLE_NAME || "";
 
 export const handler = async (event: any) => {
   const { uuid } = event.pathParameters;  // UUID is the PK
+  const species = event.queryStringParameters?.species?.toLowerCase(); // Get species from query params
 
-  // First, get the item using the UUID as the PK
+  // Validate that species is provided
+  if (!species) {
+    return {
+      statusCode: 400,
+      body: JSON.stringify({ 
+        success: false, 
+        error: "Species is required as a query parameter." 
+      }),
+    };
+  }
+
+  // First, get the item using the UUID as the PK and species as SK
   const getParams = {
     TableName: TABLE_NAME,
     Key: marshall({
       PK: uuid,  // Use UUID as the Partition Key
-      SK: "species", // Use species as the Sort Key (SK)
+      SK: species, // Use species as the Sort Key (SK)
     }),
   };
 
@@ -45,7 +57,7 @@ export const handler = async (event: any) => {
       statusCode: 200,
       body: JSON.stringify({
         success: true,
-        message: "Animal deleted successfully",
+        message: `Animal with UUID: ${uuid} and species: ${animal.SK} deleted successfully.`,
       }),
     };
   } catch (error) {
