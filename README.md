@@ -61,9 +61,9 @@ This project is licensed under the GNU GPL v3 license, which specifically prohib
 Enjoy!
 
 
-### News
+## News
 
-## 09/09/2024: 
+#### 09/09/2024: 
 All basic CRUD operations are now implemented, tested, and working! 🎉
 
 In addition, filtering functionality has been improved for better search capabilities. You can now filter animals by species, and further narrow your search by breed and/or name. For example, you can search for a "dog," then refine the results to find a "Labrador" named "Goldy."
