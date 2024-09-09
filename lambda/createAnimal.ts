@@ -34,6 +34,7 @@ export const handler = async (event: any) => {
       breed,
       name,
       age,
+      gender,
       goodWithCats,
       goodWithDogs,
       goodWithChildren,
@@ -73,6 +74,7 @@ export const handler = async (event: any) => {
     name = toProperCase(name);
 
     // Default values for optional fields
+    gender = gender ?? "Unknown";
     goodWithCats = goodWithCats ?? "Unknown";
     goodWithDogs = goodWithDogs ?? "Unknown";
     goodWithChildren = goodWithChildren ?? "Unknown";
@@ -94,6 +96,7 @@ export const handler = async (event: any) => {
         breed: breed,    // Store breed for GSI
         name,
         age,
+        gender,
         availableToAdopt: false,  // Default to false
         showOnApp: false,         // Default to false
         photos: [],               // Empty array for now
