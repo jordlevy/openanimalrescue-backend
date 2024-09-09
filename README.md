@@ -59,3 +59,15 @@ This project is powered by AWS CDK and DynamoDB. 💪 A big thanks to the AWS CD
 This project is licensed under the GNU GPL v3 license, which specifically prohibits closed-source derivatives.
 
 Enjoy!
+
+
+### News
+
+## 09/09/2024: 
+All basic CRUD operations are now implemented, tested, and working! 🎉
+
+In addition, filtering functionality has been improved for better search capabilities. You can now filter animals by species, and further narrow your search by breed and/or name. For example, you can search for a "dog," then refine the results to find a "Labrador" named "Goldy."
+
+Feel free to test it out and explore the new search features!
+
+Next I want to start on the Events and Locations, then comes Cognito.
