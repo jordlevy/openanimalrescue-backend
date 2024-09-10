@@ -5,6 +5,7 @@ export interface Animal {
     name: string;         // Name of the animal
     age: number;          // Age in years
     gender: string;      // Gender as String
+    chipNumber: string;  // Chip number
     availableToAdopt: boolean; // Whether the animal is available for adoption
     showOnApp: boolean;   // Whether to show the animal on the app
     photos: string[];     // Array of S3 links for photos

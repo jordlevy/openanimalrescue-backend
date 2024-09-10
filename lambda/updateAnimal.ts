@@ -46,6 +46,7 @@ export const handler = async (event: any) => {
       name,
       age,
       gender,
+      chipNumber,
       goodWithCats,
       goodWithDogs,
       goodWithChildren,
@@ -70,6 +71,7 @@ export const handler = async (event: any) => {
 
     // Set defaults or keep existing values for other fields
     breed = breed || existingAnimal.breed;
+    chipNumber = chipNumber || existingAnimal.chipNumber;
     goodWithCats = goodWithCats ?? existingAnimal.goodWithCats;
     goodWithDogs = goodWithDogs ?? existingAnimal.goodWithDogs;
     goodWithChildren = goodWithChildren ?? existingAnimal.goodWithChildren;
@@ -104,6 +106,7 @@ export const handler = async (event: any) => {
         name,
         age,
         gender,  // Ensure gender is handled
+        chipNumber,
         availableToAdopt,
         showOnApp,
         photos: existingAnimal.photos,  // Keep existing photos
@@ -134,6 +137,7 @@ export const handler = async (event: any) => {
         name,
         age,
         gender,  // Ensure gender is handled
+        chipNumber,
         availableToAdopt,
         showOnApp,
         photos: existingAnimal.photos,  // Keep the existing photos

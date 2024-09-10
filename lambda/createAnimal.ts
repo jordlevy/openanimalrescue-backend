@@ -35,6 +35,7 @@ export const handler = async (event: any) => {
       name,
       age,
       gender,
+      chipNumber,
       goodWithCats,
       goodWithDogs,
       goodWithChildren,
@@ -75,6 +76,7 @@ export const handler = async (event: any) => {
 
     // Default values for optional fields
     gender = gender ?? "Unknown";
+    chipNumber = chipNumber ?? "None";
     goodWithCats = goodWithCats ?? "Unknown";
     goodWithDogs = goodWithDogs ?? "Unknown";
     goodWithChildren = goodWithChildren ?? "Unknown";
@@ -97,6 +99,7 @@ export const handler = async (event: any) => {
         name,
         age,
         gender,
+        chipNumber,
         availableToAdopt: false,  // Default to false
         showOnApp: false,         // Default to false
         photos: [],               // Empty array for now
