@@ -1,0 +1,9 @@
+{
+  "eventDate": "2024-09-15T10:00:00Z",  // ISO 8601 format
+  "venueName": "Parktown",
+  "city": "Johannesburg",
+  "managerId": "staff123",  // CognitoID of the staff managing the event
+  "availableSpotsExec": 5,
+  "availableSpotsStandard": 15,
+  "venueId": "Parktown#Johannesburg"  // This references the venue's PK
+}

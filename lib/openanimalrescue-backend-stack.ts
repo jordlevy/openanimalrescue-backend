@@ -154,12 +154,19 @@ export class OpenanimalrescueBackendStack extends cdk.Stack {
 
     // Events Table
     const eventsTable = new dynamodb.Table(this, resourceName("events"), {
-      partitionKey: { name: "PK", type: dynamodb.AttributeType.STRING }, // PK: locationID
-      sortKey: { name: "SK", type: dynamodb.AttributeType.STRING }, // SK: epoch (event timestamp)
+      partitionKey: { name: "PK", type: dynamodb.AttributeType.STRING }, // PK: DDMMYYYY#VenueName
       billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
       tableName: resourceName("events"),
     });
     this.addTags(eventsTable, "dynamodb-events");
+
+    // Venues Table
+    const venuesTable = new dynamodb.Table(this, resourceName("venues"), {
+      partitionKey: { name: "PK", type: dynamodb.AttributeType.STRING }, // PK: venueName#City
+      billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
+      tableName: resourceName("venues"),
+    });
+    this.addTags(venuesTable, "dynamodb-venues");
 
     // Adoptions Table
     const adoptionsTable = new dynamodb.Table(this, resourceName("adoptions"), {
@@ -177,6 +184,12 @@ export class OpenanimalrescueBackendStack extends cdk.Stack {
       tableName: resourceName("users"),
     });
     this.addTags(usersTable, "dynamodb-users");
+
+    usersTable.addGlobalSecondaryIndex({
+      indexName: "emails-index",  // Index name for email GSI
+      partitionKey: { name: "email", type: dynamodb.AttributeType.STRING }, // GSI PK: email
+      projectionType: dynamodb.ProjectionType.ALL,  // Project all attributes
+    });
 
     // S3 bucket for data storage
     const s3Bucket = new s3.Bucket(this, resourceName("bucket"), {
@@ -309,6 +322,24 @@ export class OpenanimalrescueBackendStack extends cdk.Stack {
         actions: ["ssm:GetParameter", "ssm:GetParameters"],
         resources: [speciesListParam.parameterArn],
       })
+    );
+
+    const createEventLambda = this.createLambda(
+      api,
+      eventsTable,
+      "createEvent",
+      "POST",
+      "event",
+      [sharedUtilsLayer, sharedTypesLayer]
+    );
+
+    const createVenueLambda = this.createLambda(
+      api,
+      venuesTable,
+      "createVenue",
+      "POST",
+      "venue",
+      [sharedUtilsLayer, sharedTypesLayer]
     );
 
     // Output resources created
