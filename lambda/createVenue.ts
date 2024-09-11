@@ -4,7 +4,7 @@ import { marshall } from "@aws-sdk/util-dynamodb";
 import { Venue } from "/opt/nodejs/types";  // Import the shared Venue type
 
 const dynamoDb = new DynamoDBClient({});
-const TABLE_NAME = process.env.VENUE_TABLE_NAME || "";
+const TABLE_NAME = process.env.TABLE_NAME || "";
 
 export const handler = async (event: any) => {
   try {

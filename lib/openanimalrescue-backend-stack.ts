@@ -239,7 +239,7 @@ export class OpenanimalrescueBackendStack extends cdk.Stack {
     // Health Lambda function
     const healthLambda = this.createLambda(
       api,
-      animalsTable,
+      [animalsTable],
       "health",
       "GET",
       "health",
@@ -253,7 +253,7 @@ export class OpenanimalrescueBackendStack extends cdk.Stack {
     // Create the main CRUD Lambdas for individual animals
     const getAnimalLambda = this.createLambda(
       api,
-      animalsTable,
+      [animalsTable],
       "getAnimal",
       "GET",
       "animal/{uuid}",
@@ -265,7 +265,7 @@ export class OpenanimalrescueBackendStack extends cdk.Stack {
 
     const createAnimalLambda = this.createLambda(
       api,
-      animalsTable,
+      [animalsTable],
       "createAnimal",
       "POST",
       "animal/{uuid}",
@@ -284,7 +284,7 @@ export class OpenanimalrescueBackendStack extends cdk.Stack {
 
     const updateAnimalLambda = this.createLambda(
       api,
-      animalsTable,
+      [animalsTable],
       "updateAnimal",
       "PATCH",
       "animal/{uuid}",
@@ -295,7 +295,7 @@ export class OpenanimalrescueBackendStack extends cdk.Stack {
     );
     const deleteAnimalLambda = this.createLambda(
       api,
-      animalsTable,
+      [animalsTable],
       "deleteAnimal",
       "DELETE",
       "animal/{uuid}",
@@ -308,7 +308,7 @@ export class OpenanimalrescueBackendStack extends cdk.Stack {
     // Species-based animals routes (now under /species/{species}/animals)
     const getAnimalsLambda = this.createLambda(
       api,
-      animalsTable,
+      [animalsTable],
       "getAnimals",
       "GET",
       "animals",
@@ -326,20 +326,27 @@ export class OpenanimalrescueBackendStack extends cdk.Stack {
 
     const createEventLambda = this.createLambda(
       api,
-      eventsTable,
+      [eventsTable, venuesTable],  // Pass both tables
       "createEvent",
       "POST",
       "event",
-      [sharedUtilsLayer, sharedTypesLayer]
+      [sharedUtilsLayer, sharedTypesLayer],
+      {
+        EVENTS_TABLE_NAME: eventsTable.tableName,
+        VENUE_TABLE_NAME: venuesTable.tableName,
+      }
     );
 
     const createVenueLambda = this.createLambda(
       api,
-      venuesTable,
+      [venuesTable],
       "createVenue",
       "POST",
       "venue",
-      [sharedUtilsLayer, sharedTypesLayer]
+      [sharedUtilsLayer, sharedTypesLayer],
+      {
+        TABLE_NAME: venuesTable.tableName,
+      }
     );
 
     // Output resources created
@@ -356,7 +363,7 @@ export class OpenanimalrescueBackendStack extends cdk.Stack {
   // Helper method to create Lambda functions with routes
   createLambda(
     api: apigateway.RestApi,
-    table: dynamodb.Table,
+    tables: dynamodb.Table[], // Accept an array of tables
     functionName: string,
     method: string,
     path: string,
@@ -371,7 +378,6 @@ export class OpenanimalrescueBackendStack extends cdk.Stack {
         code: lambda.Code.fromAsset("lambda"),
         handler: `${functionName}.handler`,
         environment: {
-          TABLE_NAME: table.tableName,
           ...extraEnv,
         },
         timeout: cdk.Duration.seconds(12),
@@ -379,12 +385,13 @@ export class OpenanimalrescueBackendStack extends cdk.Stack {
       }
     );
     this.addTags(func, `lambda-${functionName}`);
-    table.grantReadWriteData(func);
+    tables.forEach(table => {
+      table.grantReadWriteData(func);
+    });
     const resource = api.root.resourceForPath(path);
     resource.addMethod(method, new apigateway.LambdaIntegration(func));
     return func;
   }
-
   // Class-level method to add tags to resources
   addTags(resource: cdk.Resource, service: string) {
     cdk.Tags.of(resource).add("organisation", ORG);

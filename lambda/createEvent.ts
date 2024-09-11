@@ -1,10 +1,11 @@
-import { DynamoDBClient, PutItemCommand } from "@aws-sdk/client-dynamodb";
-import { marshall } from "@aws-sdk/util-dynamodb";
+import { DynamoDBClient, PutItemCommand, GetItemCommand } from "@aws-sdk/client-dynamodb";
+import { marshall, unmarshall } from "@aws-sdk/util-dynamodb";
 // @ts-ignore
 import { Event } from "/opt/nodejs/types";  // Import the shared Event type
 
 const dynamoDb = new DynamoDBClient({});
-const TABLE_NAME = process.env.EVENTS_TABLE_NAME || "";
+const EVENTS_TABLE_NAME = process.env.EVENTS_TABLE_NAME || "";
+const VENUE_TABLE_NAME = process.env.VENUE_TABLE_NAME || "";
 
 export const handler = async (event: any) => {
   try {
@@ -29,39 +30,54 @@ export const handler = async (event: any) => {
       };
     }
 
-    const eventDateFormatted = new Date(eventDate).toISOString().split('T')[0].replace(/-/g, '');
-    const pk = `${eventDateFormatted}#${venueName}`;
+    const venuePk = `${venueName}#${city}`;
 
-    // Create the event object
+    const venueParams = {
+      TableName: VENUE_TABLE_NAME,
+      Key: marshall({ PK: venuePk }),
+    };
+
+    const venueResponse = await dynamoDb.send(new GetItemCommand(venueParams));
+
+    if (!venueResponse.Item) {
+      return {
+        statusCode: 404,
+        body: JSON.stringify({
+          success: false,
+          error: `Venue ${venueName} in ${city} does not exist.`,
+        }),
+      };
+    }
+
+    const eventDateFormatted = new Date(eventDate).toISOString().split('T')[0].replace(/-/g, '');
+    const eventPk = `${eventDateFormatted}#${venueName}`;
+
     const newEvent: Event = {
-      PK: pk,
+      PK: eventPk,
       managerId,
       eventDate: new Date(eventDate).toISOString(),
       venueId,
       availableSpotsExec,
       availableSpotsStandard,
-      signUpOpen: true, // Default to open for sign-ups
+      signUpOpen: true,
       volunteersExec: [],
       volunteersStandard: [],
       animalsAssigned: []
     };
 
-    // Prepare DynamoDB PutItem command
-    const params = {
-      TableName: TABLE_NAME,
+    const eventParams = {
+      TableName: EVENTS_TABLE_NAME,
       Item: marshall(newEvent),
     };
 
-    // Write the new event to DynamoDB
-    await dynamoDb.send(new PutItemCommand(params));
+    await dynamoDb.send(new PutItemCommand(eventParams));
 
-    // Return success response
     return {
       statusCode: 201,
       body: JSON.stringify({
         success: true,
         message: `Event created for ${venueName} on ${eventDateFormatted}`,
-        eventId: pk,
+        eventId: eventPk,
       }),
     };
 
