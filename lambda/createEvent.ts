@@ -9,7 +9,7 @@ const VENUE_TABLE_NAME = process.env.VENUE_TABLE_NAME || "";
 
 export const handler = async (event: any) => {
   try {
-    // Parse the request body
+    // Parse the request body, venueId or venueName and city might be redundant should look at the schema
     const {
       eventDate,
       venueName,
