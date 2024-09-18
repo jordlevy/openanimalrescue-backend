@@ -1,5 +1,5 @@
 import { DynamoDBClient, PutItemCommand, GetItemCommand } from "@aws-sdk/client-dynamodb";
-import { marshall, unmarshall } from "@aws-sdk/util-dynamodb";
+import { marshall } from "@aws-sdk/util-dynamodb";
 // @ts-ignore
 import { Event } from "/opt/nodejs/types";  // Import the shared Event type
 
@@ -9,49 +9,60 @@ const VENUE_TABLE_NAME = process.env.VENUE_TABLE_NAME || "";
 
 export const handler = async (event: any) => {
   try {
-    // Parse the request body, venueId or venueName and city might be redundant should look at the schema
+    // Parse the request body
     const {
       eventDate,
-      venueName,
-      city,
       managerId,
       availableSpotsExec,
       availableSpotsStandard,
       venueId
     } = JSON.parse(event.body);
 
-    if (!eventDate || !venueName || !city || !managerId || !availableSpotsExec || !availableSpotsStandard || !venueId) {
+    // Validate required fields
+    if (
+      !eventDate ||
+      !managerId ||
+      availableSpotsExec === undefined ||
+      availableSpotsStandard === undefined ||
+      !venueId
+    ) {
       return {
         statusCode: 400,
         body: JSON.stringify({
           success: false,
-          error: "Missing required fields: Event Date, Venue, City, Manager, Spots for Execs, Spots for standard volunteers, and Venue are required.",
+          error:
+            "Missing required fields: Event Date, Manager ID, availableSpotsExec, availableSpotsStandard, and Venue ID are required.",
         }),
       };
     }
 
-    const venuePk = `${venueName}#${city}`;
-
+    // Query the venue using venueId as the primary key
     const venueParams = {
       TableName: VENUE_TABLE_NAME,
-      Key: marshall({ PK: venuePk }),
+      Key: marshall({ PK: venueId }),
     };
 
     const venueResponse = await dynamoDb.send(new GetItemCommand(venueParams));
 
+    // If the venue doesn't exist, return an error
     if (!venueResponse.Item) {
       return {
         statusCode: 404,
         body: JSON.stringify({
           success: false,
-          error: `Venue ${venueName} in ${city} does not exist.`,
+          error: `Venue with ID ${venueId} does not exist.`,
         }),
       };
     }
 
-    const eventDateFormatted = new Date(eventDate).toISOString().split('T')[0].replace(/-/g, '');
-    const eventPk = `${eventDateFormatted}#${venueName}`;
+    // Format event date and create the event's PK
+    const eventDateFormatted = new Date(eventDate)
+      .toISOString()
+      .split("T")[0]
+      .replace(/-/g, "");
+    const eventPk = `${eventDateFormatted}#${venueId}`;
 
+    // Create the event object
     const newEvent: Event = {
       PK: eventPk,
       managerId,
@@ -60,32 +71,33 @@ export const handler = async (event: any) => {
       availableSpotsExec,
       availableSpotsStandard,
       signUpOpen: true,
-      volunteersExec: [],
-      volunteersStandard: [],
-      animalsAssigned: []
+      animalsAssigned: [],
+      approvedExecCount: 0,
+      approvedStandardCount: 0,
     };
 
+    // Prepare the PutItemCommand for DynamoDB
     const eventParams = {
       TableName: EVENTS_TABLE_NAME,
       Item: marshall(newEvent),
+      ConditionExpression: "attribute_not_exists(PK)",
     };
 
+    // Insert the event into the Events table
     await dynamoDb.send(new PutItemCommand(eventParams));
 
+    // Return success response
     return {
       statusCode: 201,
       body: JSON.stringify({
         success: true,
-        message: `Event created for ${venueName} on ${eventDateFormatted}`,
+        message: `Event created for venue ${venueId} on ${eventDateFormatted}`,
         eventId: eventPk,
       }),
     };
-
   } catch (error) {
-    let errorMessage = "An unknown error occurred";
-    if (error instanceof Error) {
-      errorMessage = error.message;
-    }
+    const errorMessage =
+      error instanceof Error ? error.message : "An unknown error occurred";
     return {
       statusCode: 500,
       body: JSON.stringify({

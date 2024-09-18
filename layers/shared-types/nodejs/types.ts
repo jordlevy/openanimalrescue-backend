@@ -22,17 +22,18 @@ export interface Animal {
   }
 
   export interface Event {
-    PK: string;             // DDMMYYYY#VenueName (e.g., 15092024#Parktown) I'm South African, so we use DDMMYYYY
-    managerId: string;      // The CognitoID of the manager who created the event
-    eventDate: string;      // ISO Date format (e.g., '2024-09-15T10:00:00Z') mainly for sorting in memory or with a GSI
-    venueId: string;     // ID of the venue so we can fetch from the Venues table, or review the venue details below.
+    PK: string;             // Event ID (e.g., '15092024#Parktown')
+    managerId: string;      // CognitoID of the manager who created the event
+    eventDate: string;      // ISO Date format (e.g., '2024-09-15T10:00:00Z')
+    venueId: string;        // ID of the venue
     availableSpotsExec: number;     // Number of spots for exec volunteers
     availableSpotsStandard: number; // Number of spots for standard volunteers
     signUpOpen: boolean;    // Flag to indicate if sign-ups are open
-    volunteersExec: string[];   // Array of CognitoIDs of exec volunteers
-    volunteersStandard: string[]; // Array of CognitoIDs of standard volunteers
     animalsAssigned: string[];   // Array of Animal PKs assigned to the event
+    approvedExecCount: number;       // Number of approved exec volunteers
+    approvedStandardCount: number;   // Number of approved standard volunteers
   }
+  
   
   export interface Venue {
     PK: string;            // venueName#City (e.g., Parktown#Johannesburg)
@@ -46,12 +47,13 @@ export interface Animal {
   }
   
   export interface VolunteerSignUp {
-    PK: string;           // DDMMYYYY#VenueName (e.g., 15092024#Parktown)
-    SK: string;           // CognitoID of the volunteer (e.g., user123)
-    userId: string;       // CognitoID of the volunteer
+    PK: string;           // Event ID (e.g., '15092024#Parktown')
+    SK: string;           // Volunteer ID (CognitoID)
     signupEpoch: number;  // Epoch timestamp when the volunteer signed up
-    assignedRole: 'exec' | 'standard' | null;  // Role assigned by staff, default is null
-    reviewedBy: string | null;  // CognitoID of the staff member who reviewed and added them to the list
-    reviewedAt: number | null;  // Epoch timestamp for when the review was completed
+    status: 'pending' | 'approved' | 'rejected'; // Status of the sign-up
+    assignedRole: 'exec' | 'standard' | null;    // Role assigned upon approval
+    reviewedBy?: string;  // CognitoID of the Manager who reviewed
+    reviewedAt?: number;  // Epoch timestamp when the review was completed
   }
+  
   

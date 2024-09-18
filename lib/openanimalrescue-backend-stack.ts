@@ -9,6 +9,7 @@ import * as apigateway from "aws-cdk-lib/aws-apigateway";
 import * as cognito from "aws-cdk-lib/aws-cognito";
 import * as iam from "aws-cdk-lib/aws-iam";
 import * as ssm from "aws-cdk-lib/aws-ssm";
+import { CfnJson } from "aws-cdk-lib";
 
 // Load environment variables
 dotenv.config();
@@ -29,15 +30,22 @@ const STAGE = process.env.STAGE || "dev";
 const resourceName = (service: string) => `oar-${ORG}-${service}-${STAGE}`;
 
 export class OpenanimalrescueBackendStack extends cdk.Stack {
+  private userPool: cognito.UserPool;
+
   constructor(scope: Construct, id: string, props?: cdk.StackProps) {
     super(scope, id, props);
 
     // Cognito User Pool
-    const userPool = new cognito.UserPool(this, resourceName("userpool"), {
+    this.userPool = new cognito.UserPool(this, resourceName("userpool"), {
       userPoolName: resourceName("userpool"),
       selfSignUpEnabled: true,
       signInAliases: { email: true },
-      autoVerify: { email: false },
+      autoVerify: { email: true },
+      mfa: cognito.Mfa.REQUIRED, // Require MFA for all users
+      mfaSecondFactor: {
+        sms: true, // Enable SMS MFA
+        otp: true, // Enable TOTP MFA
+      },
       passwordPolicy: {
         minLength: 8,
         requireLowercase: false,
@@ -46,15 +54,21 @@ export class OpenanimalrescueBackendStack extends cdk.Stack {
         requireSymbols: false,
       },
     });
-    this.addTags(userPool, "cognito-userpool");
+    this.addTags(this.userPool, "cognito-userpool");
 
     // Cognito User Pool Client
     const userPoolClient = new cognito.UserPoolClient(
       this,
       resourceName("userpool-client"),
       {
-        userPool,
+        userPool: this.userPool,
         generateSecret: false,
+        authFlows: {
+          adminUserPassword: true,
+          userSrp: true,
+          custom: true,
+        },
+        preventUserExistenceErrors: true,
       }
     );
     this.addTags(userPoolClient, "cognito-userpool-client");
@@ -64,15 +78,118 @@ export class OpenanimalrescueBackendStack extends cdk.Stack {
       this,
       resourceName("identity-pool"),
       {
-        allowUnauthenticatedIdentities: false,
+        allowUnauthenticatedIdentities: true, // Allow unauthenticated identities for public access
         cognitoIdentityProviders: [
           {
             clientId: userPoolClient.userPoolClientId,
-            providerName: userPool.userPoolProviderName,
+            providerName: this.userPool.userPoolProviderName,
           },
         ],
       }
     );
+
+    // ============================
+    // DynamoDB Tables
+    // ============================
+
+    // Array to hold DynamoDB tables
+    const dynamoTables: dynamodb.Table[] = [];
+
+    // Animals Table
+    const animalsTable = new dynamodb.Table(this, resourceName("animals"), {
+      partitionKey: { name: "PK", type: dynamodb.AttributeType.STRING }, // PK: uuid
+      sortKey: { name: "SK", type: dynamodb.AttributeType.STRING }, // SK: species
+      billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
+      tableName: resourceName("animals"),
+    });
+    this.addTags(animalsTable, "dynamodb-animals");
+    dynamoTables.push(animalsTable);
+
+    // Global Secondary Indexes for Animals Table
+    animalsTable.addGlobalSecondaryIndex({
+      indexName: "breed-index",
+      partitionKey: { name: "breed", type: dynamodb.AttributeType.STRING },
+      projectionType: dynamodb.ProjectionType.ALL,
+    });
+
+    animalsTable.addGlobalSecondaryIndex({
+      indexName: "name-index",
+      partitionKey: { name: "name", type: dynamodb.AttributeType.STRING },
+      projectionType: dynamodb.ProjectionType.ALL,
+    });
+
+    animalsTable.addGlobalSecondaryIndex({
+      indexName: "species-index",
+      partitionKey: { name: "SK", type: dynamodb.AttributeType.STRING }, // SK (species)
+      projectionType: dynamodb.ProjectionType.ALL,
+    });
+
+    // Events Table
+    const eventsTable = new dynamodb.Table(this, resourceName("events"), {
+      partitionKey: { name: "PK", type: dynamodb.AttributeType.STRING }, // PK: DDMMYYYY#VenueName
+      billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
+      tableName: resourceName("events"),
+    });
+    this.addTags(eventsTable, "dynamodb-events");
+    dynamoTables.push(eventsTable);
+
+    // Venues Table
+    const venuesTable = new dynamodb.Table(this, resourceName("venues"), {
+      partitionKey: { name: "PK", type: dynamodb.AttributeType.STRING }, // PK: venueName#City
+      billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
+      tableName: resourceName("venues"),
+    });
+    this.addTags(venuesTable, "dynamodb-venues");
+    dynamoTables.push(venuesTable);
+
+    // Adoptions Table
+    const adoptionsTable = new dynamodb.Table(this, resourceName("adoptions"), {
+      partitionKey: { name: "PK", type: dynamodb.AttributeType.STRING }, // PK: CognitoID (user ID)
+      sortKey: { name: "SK", type: dynamodb.AttributeType.STRING }, // SK: epoch (adoption timestamp)
+      billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
+      tableName: resourceName("adoptions"),
+    });
+    this.addTags(adoptionsTable, "dynamodb-adoptions");
+    dynamoTables.push(adoptionsTable);
+
+    // Users Table
+    const usersTable = new dynamodb.Table(this, resourceName("users"), {
+      partitionKey: { name: "PK", type: dynamodb.AttributeType.STRING }, // PK: CognitoID
+      billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
+      tableName: resourceName("users"),
+    });
+    this.addTags(usersTable, "dynamodb-users");
+    dynamoTables.push(usersTable);
+
+    usersTable.addGlobalSecondaryIndex({
+      indexName: "emails-index",
+      partitionKey: { name: "email", type: dynamodb.AttributeType.STRING },
+      projectionType: dynamodb.ProjectionType.ALL,
+    });
+
+    // VolunteerSignUp Table
+    const volunteerSignUpTable = new dynamodb.Table(
+      this,
+      resourceName("volunteer-signups"),
+      {
+        partitionKey: { name: "PK", type: dynamodb.AttributeType.STRING }, // Event ID
+        sortKey: { name: "SK", type: dynamodb.AttributeType.STRING }, // Volunteer ID
+        billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
+        tableName: resourceName("volunteer-signups"),
+      }
+    );
+    this.addTags(volunteerSignUpTable, "dynamodb-volunteer-signups");
+    dynamoTables.push(volunteerSignUpTable);
+
+    // Collect ARNs of all tables
+    const tableArns = dynamoTables.flatMap((table) => [
+      table.tableArn, // Table ARN
+      `${table.tableArn}/*`, // Items in the table
+    ]);
+
+    // ============================
+    // IAM Roles and Policies
+    // ============================
 
     // IAM roles for authenticated and unauthenticated users
     const authenticatedRole = new iam.Role(this, resourceName("auth-role"), {
@@ -112,6 +229,116 @@ export class OpenanimalrescueBackendStack extends cdk.Stack {
     this.addTags(authenticatedRole, "iam-auth-role");
     this.addTags(unauthenticatedRole, "iam-unauth-role");
 
+    // Staff Role
+    const staffRole = new iam.Role(this, resourceName("staff-role"), {
+      assumedBy: new iam.FederatedPrincipal(
+        "cognito-identity.amazonaws.com",
+        {
+          StringEquals: {
+            "cognito-identity.amazonaws.com:aud": identityPool.ref,
+          },
+          "ForAnyValue:StringLike": {
+            "cognito-identity.amazonaws.com:amr": "authenticated",
+          },
+        },
+        "sts:AssumeRoleWithWebIdentity"
+      ),
+    });
+    this.addTags(staffRole, "iam-staff-role");
+
+    // Attach policies to staffRole
+    staffRole.addToPolicy(
+      new iam.PolicyStatement({
+        actions: [
+          "dynamodb:PutItem",
+          "dynamodb:GetItem",
+          "dynamodb:UpdateItem",
+          "dynamodb:DeleteItem",
+          "dynamodb:Query",
+          "dynamodb:Scan",
+        ],
+        resources: tableArns,
+      })
+    );
+
+    // Managers Role
+    const managersRole = new iam.Role(this, resourceName("managers-role"), {
+      assumedBy: new iam.FederatedPrincipal(
+        "cognito-identity.amazonaws.com",
+        {
+          StringEquals: {
+            "cognito-identity.amazonaws.com:aud": identityPool.ref,
+          },
+          "ForAnyValue:StringLike": {
+            "cognito-identity.amazonaws.com:amr": "authenticated",
+          },
+        },
+        "sts:AssumeRoleWithWebIdentity"
+      ),
+    });
+    this.addTags(managersRole, "iam-managers-role");
+
+    // Attach policies to managersRole
+    managersRole.addToPolicy(
+      new iam.PolicyStatement({
+        actions: ["dynamodb:*"], // Full DynamoDB access
+        resources: tableArns,
+      })
+    );
+
+    // Allow managers to manage user groups
+    managersRole.addToPolicy(
+      new iam.PolicyStatement({
+        actions: [
+          "cognito-idp:AdminAddUserToGroup",
+          "cognito-idp:AdminRemoveUserFromGroup",
+          "cognito-idp:AdminCreateUser",
+          "cognito-idp:AdminDeleteUser",
+        ],
+        resources: [this.userPool.userPoolArn],
+      })
+    );
+
+    // Create the "Staff" group
+    const staffGroup = new cognito.CfnUserPoolGroup(
+      this,
+      resourceName("staff-group"),
+      {
+        userPoolId: this.userPool.userPoolId,
+        groupName: "Staff",
+        description: "Group for staff users with CRUD permissions",
+        roleArn: staffRole.roleArn, // Assign the role to the group
+      }
+    );
+
+    // Create the "Managers" group
+    const managersGroup = new cognito.CfnUserPoolGroup(
+      this,
+      resourceName("managers-group"),
+      {
+        userPoolId: this.userPool.userPoolId,
+        groupName: "Managers",
+        description: "Group for manager users with elevated permissions",
+        roleArn: managersRole.roleArn, // Assign the role to the group
+      }
+    );
+
+    // ============================
+    // Identity Pool Role Attachment with Role Mappings
+    // ============================
+
+    const cognitoPrincipalTag = `${this.userPool.userPoolProviderName}:${userPoolClient.userPoolClientId}`;
+
+    const roleMappings = new CfnJson(this, resourceName("roleMappings"), {
+      value: {
+        [cognitoPrincipalTag]: {
+          type: "Token",
+          ambiguousRoleResolution: "AuthenticatedRole",
+          identityProvider: cognitoPrincipalTag,
+        },
+      },
+    });
+
     new cognito.CfnIdentityPoolRoleAttachment(
       this,
       resourceName("identity-pool-role-attachment"),
@@ -121,75 +348,13 @@ export class OpenanimalrescueBackendStack extends cdk.Stack {
           authenticated: authenticatedRole.roleArn,
           unauthenticated: unauthenticatedRole.roleArn,
         },
+        roleMappings: roleMappings.value,
       }
     );
 
-    // Animals Table
-    const animalsTable = new dynamodb.Table(this, resourceName("animals"), {
-      partitionKey: { name: "PK", type: dynamodb.AttributeType.STRING }, // PK: uuid
-      sortKey: { name: "SK", type: dynamodb.AttributeType.STRING },      // SK: species
-      billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
-      tableName: resourceName("animals"),
-    });
-    this.addTags(animalsTable, "dynamodb-animals");
-
-    // Global Secondary Index (GSI) for animals to query by UUID
-    animalsTable.addGlobalSecondaryIndex({
-      indexName: "breed-index",  // Index name for breed GSI
-      partitionKey: { name: "breed", type: dynamodb.AttributeType.STRING }, // GSI PK: breed
-      projectionType: dynamodb.ProjectionType.ALL,  // Project all attributes
-    });
-
-    animalsTable.addGlobalSecondaryIndex({
-      indexName: "name-index",  // Name of the index for querying by name
-      partitionKey: { name: "name", type: dynamodb.AttributeType.STRING }, // GSI PK: name
-      projectionType: dynamodb.ProjectionType.ALL,  // Project all attributes
-    });
-  
-    animalsTable.addGlobalSecondaryIndex({
-      indexName: "species-index",
-      partitionKey: { name: "SK", type: dynamodb.AttributeType.STRING }, // SK (species)
-      projectionType: dynamodb.ProjectionType.ALL,
-    });
-
-    // Events Table
-    const eventsTable = new dynamodb.Table(this, resourceName("events"), {
-      partitionKey: { name: "PK", type: dynamodb.AttributeType.STRING }, // PK: DDMMYYYY#VenueName
-      billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
-      tableName: resourceName("events"),
-    });
-    this.addTags(eventsTable, "dynamodb-events");
-
-    // Venues Table
-    const venuesTable = new dynamodb.Table(this, resourceName("venues"), {
-      partitionKey: { name: "PK", type: dynamodb.AttributeType.STRING }, // PK: venueName#City
-      billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
-      tableName: resourceName("venues"),
-    });
-    this.addTags(venuesTable, "dynamodb-venues");
-
-    // Adoptions Table
-    const adoptionsTable = new dynamodb.Table(this, resourceName("adoptions"), {
-      partitionKey: { name: "PK", type: dynamodb.AttributeType.STRING }, // PK: CognitoID (user ID)
-      sortKey: { name: "SK", type: dynamodb.AttributeType.STRING }, // SK: epoch (adoption timestamp)
-      billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
-      tableName: resourceName("adoptions"),
-    });
-    this.addTags(adoptionsTable, "dynamodb-adoptions");
-
-    // Users Table
-    const usersTable = new dynamodb.Table(this, resourceName("users"), {
-      partitionKey: { name: "PK", type: dynamodb.AttributeType.STRING }, // PK: CognitoID
-      billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
-      tableName: resourceName("users"),
-    });
-    this.addTags(usersTable, "dynamodb-users");
-
-    usersTable.addGlobalSecondaryIndex({
-      indexName: "emails-index",  // Index name for email GSI
-      partitionKey: { name: "email", type: dynamodb.AttributeType.STRING }, // GSI PK: email
-      projectionType: dynamodb.ProjectionType.ALL,  // Project all attributes
-    });
+    // ============================
+    // Other Resources
+    // ============================
 
     // S3 bucket for data storage
     const s3Bucket = new s3.Bucket(this, resourceName("bucket"), {
@@ -219,22 +384,34 @@ export class OpenanimalrescueBackendStack extends cdk.Stack {
     this.addTags(api, "apigateway");
 
     // Lambda Layer for shared node modules
-    const sharedUtilsLayer = new lambda.LayerVersion(this, "SharedUtilsLayer", {
-      code: lambda.Code.fromAsset(
-        path.join(__dirname, "../layers/shared-utils")
-      ),
-      compatibleRuntimes: [lambda.Runtime.NODEJS_20_X],
-      description: "Shared utilities for Node.js Lambda functions (e.g., uuid)",
-    });
+    const sharedUtilsLayer = new lambda.LayerVersion(
+      this,
+      "SharedUtilsLayer",
+      {
+        code: lambda.Code.fromAsset(
+          path.join(__dirname, "../layers/shared-utils")
+        ),
+        compatibleRuntimes: [lambda.Runtime.NODEJS_20_X],
+        description: "Shared utilities for Node.js Lambda functions (e.g., uuid)",
+      }
+    );
     this.addTags(sharedUtilsLayer, "lambda-layer");
 
-    const sharedTypesLayer = new lambda.LayerVersion(this, "SharedTypesLayer", {
-      code: lambda.Code.fromAsset(
-        path.join(__dirname, "../layers/shared-types")
-      ),
-      compatibleRuntimes: [lambda.Runtime.NODEJS_20_X],
-      description: "Shared types for Node.js Lambda functions",
-    });
+    const sharedTypesLayer = new lambda.LayerVersion(
+      this,
+      "SharedTypesLayer",
+      {
+        code: lambda.Code.fromAsset(
+          path.join(__dirname, "../layers/shared-types")
+        ),
+        compatibleRuntimes: [lambda.Runtime.NODEJS_20_X],
+        description: "Shared types for Node.js Lambda functions",
+      }
+    );
+
+    // ============================
+    // Lambda Functions
+    // ============================
 
     // Health Lambda function
     const healthLambda = this.createLambda(
@@ -250,7 +427,7 @@ export class OpenanimalrescueBackendStack extends cdk.Stack {
       }
     );
 
-    // Create the main CRUD Lambdas for individual animals
+    // Get Animal Lambda (Public access)
     const getAnimalLambda = this.createLambda(
       api,
       [animalsTable],
@@ -260,9 +437,11 @@ export class OpenanimalrescueBackendStack extends cdk.Stack {
       [sharedUtilsLayer, sharedTypesLayer],
       {
         SPECIES_LIST_SSM_PARAM: speciesListParam.parameterName,
-      }
+      },
+      false // Unauthenticated access allowed
     );
 
+    // Create Animal Lambda (Authenticated access)
     const createAnimalLambda = this.createLambda(
       api,
       [animalsTable],
@@ -272,16 +451,17 @@ export class OpenanimalrescueBackendStack extends cdk.Stack {
       [sharedUtilsLayer, sharedTypesLayer],
       {
         SPECIES_LIST_SSM_PARAM: speciesListParam.parameterName,
-      }
+      },
+      true // Authenticated access required
     );
-    // Add required permissions for SSM Parameter access
     createAnimalLambda.addToRolePolicy(
       new iam.PolicyStatement({
         actions: ["ssm:GetParameter", "ssm:GetParameters"],
-        resources: [speciesListParam.parameterArn], // Ensure correct parameter ARN
+        resources: [speciesListParam.parameterArn],
       })
     );
 
+    // Update Animal Lambda (Authenticated access)
     const updateAnimalLambda = this.createLambda(
       api,
       [animalsTable],
@@ -291,8 +471,11 @@ export class OpenanimalrescueBackendStack extends cdk.Stack {
       [sharedUtilsLayer, sharedTypesLayer],
       {
         SPECIES_LIST_SSM_PARAM: speciesListParam.parameterName,
-      }
+      },
+      true // Authenticated access required
     );
+
+    // Delete Animal Lambda (Authenticated access)
     const deleteAnimalLambda = this.createLambda(
       api,
       [animalsTable],
@@ -302,10 +485,11 @@ export class OpenanimalrescueBackendStack extends cdk.Stack {
       [sharedUtilsLayer, sharedTypesLayer],
       {
         SPECIES_LIST_SSM_PARAM: speciesListParam.parameterName,
-      }
+      },
+      true // Authenticated access required
     );
 
-    // Species-based animals routes (now under /species/{species}/animals)
+    // Get Animals Lambda (Public access)
     const getAnimalsLambda = this.createLambda(
       api,
       [animalsTable],
@@ -315,7 +499,8 @@ export class OpenanimalrescueBackendStack extends cdk.Stack {
       [sharedUtilsLayer, sharedTypesLayer],
       {
         SPECIES_LIST_SSM_PARAM: speciesListParam.parameterName,
-      }
+      },
+      false // Unauthenticated access allowed
     );
     getAnimalsLambda.addToRolePolicy(
       new iam.PolicyStatement({
@@ -324,9 +509,10 @@ export class OpenanimalrescueBackendStack extends cdk.Stack {
       })
     );
 
+    // Create Event Lambda (Authenticated access)
     const createEventLambda = this.createLambda(
       api,
-      [eventsTable, venuesTable],  // Pass both tables
+      [eventsTable, venuesTable],
       "createEvent",
       "POST",
       "event",
@@ -334,9 +520,11 @@ export class OpenanimalrescueBackendStack extends cdk.Stack {
       {
         EVENTS_TABLE_NAME: eventsTable.tableName,
         VENUE_TABLE_NAME: venuesTable.tableName,
-      }
+      },
+      true // Authenticated access required
     );
 
+    // Create Venue Lambda (Authenticated access)
     const createVenueLambda = this.createLambda(
       api,
       [venuesTable],
@@ -346,12 +534,89 @@ export class OpenanimalrescueBackendStack extends cdk.Stack {
       [sharedUtilsLayer, sharedTypesLayer],
       {
         TABLE_NAME: venuesTable.tableName,
-      }
+      },
+      true // Authenticated access required
     );
+
+    // Volunteer Management Lambdas
+
+    // Create Volunteer Signup Lambda (Authenticated users)
+    const createVolunteerSignupLambda = this.createLambda(
+      api,
+      [volunteerSignUpTable, eventsTable],
+      "createVolunteerSignup",
+      "POST",
+      "volunteer/signup",
+      [sharedUtilsLayer, sharedTypesLayer],
+      {
+        VOLUNTEER_SIGNUP_TABLE_NAME: volunteerSignUpTable.tableName,
+        EVENTS_TABLE_NAME: eventsTable.tableName,
+      },
+      true // Requires authentication
+    );
+
+    // Confirm Volunteer Lambda (Managers only)
+    const confirmVolunteerLambda = this.createLambda(
+      api,
+      [volunteerSignUpTable, eventsTable],
+      "confirmVolunteer",
+      "POST",
+      "volunteer/confirm",
+      [sharedUtilsLayer, sharedTypesLayer],
+      {
+        VOLUNTEER_SIGNUP_TABLE_NAME: volunteerSignUpTable.tableName,
+        EVENTS_TABLE_NAME: eventsTable.tableName,
+      },
+      true // Requires authentication
+    );
+
+    // Get Volunteers for Event Lambda (Managers only)
+    const getVolunteersForEventLambda = this.createLambda(
+      api,
+      [volunteerSignUpTable],
+      "getVolunteersForEvent",
+      "GET",
+      "event/{eventId}/volunteers",
+      [sharedUtilsLayer, sharedTypesLayer],
+      {
+        VOLUNTEER_SIGNUP_TABLE_NAME: volunteerSignUpTable.tableName,
+      },
+      true // Requires authentication
+    );
+
+    // Manage User Groups Lambda (Managers only)
+    const manageUserGroupsLambda = this.createLambda(
+      api,
+      [],
+      "manageUserGroups",
+      "POST",
+      "user/group",
+      [sharedUtilsLayer],
+      {
+        USER_POOL_ID: this.userPool.userPoolId,
+      },
+      true // Requires authentication
+    );
+    // Grant permissions to manage Cognito User Pool
+    manageUserGroupsLambda.addToRolePolicy(
+      new iam.PolicyStatement({
+        actions: [
+          "cognito-idp:AdminAddUserToGroup",
+          "cognito-idp:AdminRemoveUserFromGroup",
+          "cognito-idp:AdminCreateUser",
+          "cognito-idp:AdminDeleteUser",
+        ],
+        resources: [this.userPool.userPoolArn],
+      })
+    );
+
+    // ============================
+    // Outputs
+    // ============================
 
     // Output resources created
     this.addOutputs({
-      UserPoolId: userPool.userPoolId,
+      UserPoolId: this.userPool.userPoolId,
       UserPoolClientId: userPoolClient.userPoolClientId,
       IdentityPoolId: identityPool.ref,
       AnimalsTable: animalsTable.tableName,
@@ -360,15 +625,16 @@ export class OpenanimalrescueBackendStack extends cdk.Stack {
     });
   }
 
-  // Helper method to create Lambda functions with routes
+  // Updated createLambda method
   createLambda(
     api: apigateway.RestApi,
-    tables: dynamodb.Table[], // Accept an array of tables
+    tables: dynamodb.Table[],
     functionName: string,
     method: string,
     path: string,
-    layers: lambda.ILayerVersion[], // Accept an array of layers
-    extraEnv: Record<string, string> = {}
+    layers: lambda.ILayerVersion[],
+    extraEnv: Record<string, string> = {},
+    authorized: boolean = false
   ) {
     const func = new lambda.Function(
       this,
@@ -385,13 +651,42 @@ export class OpenanimalrescueBackendStack extends cdk.Stack {
       }
     );
     this.addTags(func, `lambda-${functionName}`);
-    tables.forEach(table => {
+    tables.forEach((table) => {
       table.grantReadWriteData(func);
     });
-    const resource = api.root.resourceForPath(path);
-    resource.addMethod(method, new apigateway.LambdaIntegration(func));
+
+    // Build the API resource path
+    const pathParts = path.split("/").filter((p) => p !== "");
+    let resource = api.root;
+    for (const part of pathParts) {
+      if (resource.getResource(part)) {
+        // If the resource already exists, reuse it
+        resource = resource.getResource(part) as apigateway.Resource;
+      } else {
+        // Otherwise, create a new resource
+        resource = resource.addResource(part);
+      }
+    }
+
+    const integration = new apigateway.LambdaIntegration(func);
+
+    const methodOptions: apigateway.MethodOptions = authorized
+      ? {
+          authorizer: new apigateway.CognitoUserPoolsAuthorizer(
+            this,
+            resourceName(`${functionName}-authorizer`),
+            {
+              cognitoUserPools: [this.userPool],
+            }
+          ),
+          authorizationType: apigateway.AuthorizationType.COGNITO,
+        }
+      : {};
+
+    resource.addMethod(method, integration, methodOptions);
     return func;
   }
+
   // Class-level method to add tags to resources
   addTags(resource: cdk.Resource, service: string) {
     cdk.Tags.of(resource).add("organisation", ORG);
