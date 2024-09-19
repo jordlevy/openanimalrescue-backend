@@ -2,9 +2,14 @@ import { DynamoDBClient, GetItemCommand, PutItemCommand, DeleteItemCommand } fro
 import { marshall, unmarshall } from "@aws-sdk/util-dynamodb";
 // @ts-ignore
 import { Animal } from "/opt/nodejs/types";
+// @ts-ignore
+import { isUserAuthorized } from "/opt/nodejs/cognitoAuthCheck";
+// @ts-ignore
+import { generateEpoch } from "/opt/nodejs/shared-utils";
 
 const dynamoDb = new DynamoDBClient({});
 const TABLE_NAME = process.env.TABLE_NAME || "";
+const ALLOWED_GROUPS = ["Staff", "Managers"];
 
 // Helper function to convert string to Proper Case
 const toProperCase = (str: string): string => {
@@ -13,6 +18,15 @@ const toProperCase = (str: string): string => {
 
 export const handler = async (event: any) => {
   try {
+    if (!isUserAuthorized(event, ALLOWED_GROUPS)) {
+      return {
+        statusCode: 403,
+        body: JSON.stringify({
+          success: false,
+          error: "You do not have permission to perform this action.",
+        }),
+      };
+    }
     const { uuid } = event.pathParameters; // UUID is the PK
     const species = event.queryStringParameters?.species?.toLowerCase();
 
@@ -84,7 +98,7 @@ export const handler = async (event: any) => {
     showOnApp = showOnApp !== undefined ? showOnApp : existingAnimal.showOnApp;
 
     // Update the timestamp
-    const currentEpochTime = Math.floor(Date.now() / 1000);
+    const currentEpochTime = generateEpoch(Date.now());
 
     // If the species has changed, delete the old entry and insert the updated animal as a new item
     if (speciesChanging) {

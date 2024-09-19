@@ -2,13 +2,25 @@ import { DynamoDBClient, PutItemCommand, GetItemCommand } from "@aws-sdk/client-
 import { marshall } from "@aws-sdk/util-dynamodb";
 // @ts-ignore
 import { Event } from "/opt/nodejs/types";  // Import the shared Event type
+// @ts-ignore
+import { isUserAuthorized } from "/opt/nodejs/cognitoAuthCheck";
 
 const dynamoDb = new DynamoDBClient({});
 const EVENTS_TABLE_NAME = process.env.EVENTS_TABLE_NAME || "";
 const VENUE_TABLE_NAME = process.env.VENUE_TABLE_NAME || "";
+const ALLOWED_GROUPS = ["Staff", "Managers"];
 
 export const handler = async (event: any) => {
   try {
+    if (!isUserAuthorized(event, ALLOWED_GROUPS)) {
+      return {
+        statusCode: 403,
+        body: JSON.stringify({
+          success: false,
+          error: "You do not have permission to perform this action.",
+        }),
+      };
+    }
     // Parse the request body
     const {
       eventDate,

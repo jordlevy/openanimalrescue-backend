@@ -5,11 +5,17 @@ import { SSMClient, GetParameterCommand } from "@aws-sdk/client-ssm";
 import { v4 as uuidv4 } from "/opt/nodejs/node_modules/uuid";  // Import uuid
 // @ts-ignore
 import { Animal } from "/opt/nodejs/types";  // Import the shared Animal type
+// @ts-ignore
+import { isUserAuthorized } from "/opt/nodejs/cognitoAuthCheck";
+// @ts-ignore
+import { generateEpoch } from "/opt/nodejs/shared-utils";
 
 const dynamoDb = new DynamoDBClient({});
 const ssmClient = new SSMClient({});
 const TABLE_NAME = process.env.TABLE_NAME || "";
 const SPECIES_LIST_SSM_PARAM = process.env.SPECIES_LIST_SSM_PARAM || "";
+
+const ALLOWED_GROUPS = ["Staff", "Managers"];
 
 // Helper function to convert string to Proper Case
 const toProperCase = (str: string): string => {
@@ -19,8 +25,23 @@ const toProperCase = (str: string): string => {
   );
 };
 
+/**
+ * Lambda Handler
+ * @param event - API Gateway event
+ * @returns API Gateway response
+ */
 export const handler = async (event: any) => {
   try {
+    if (!isUserAuthorized(event, ALLOWED_GROUPS)) {
+      return {
+        statusCode: 403,
+        body: JSON.stringify({
+          success: false,
+          error: "You do not have permission to perform this action.",
+        }),
+      };
+    }
+
     // Fetch species list from SSM
     const speciesParam = await ssmClient.send(
       new GetParameterCommand({ Name: SPECIES_LIST_SSM_PARAM })
@@ -86,7 +107,7 @@ export const handler = async (event: any) => {
     headline = headline ?? "No headline provided";
     bio = bio ?? "No bio provided";
 
-    const currentEpochTime = Math.floor(Date.now() / 1000);
+    const currentEpochTime = generateEpoch(Date.now());
 
     // Generate a UUID for the animal
     const animalUuid = uuidv4();

@@ -11,6 +11,7 @@
   "dependencies": {
     "@aws-sdk/client-secrets-manager": "^3.645.0",
     "axios": "^1.7.7",
+    "lodash": "^4.17.21",
     "uuid": "^10.0.0"
   }
 }

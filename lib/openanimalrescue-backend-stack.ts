@@ -31,9 +31,14 @@ const resourceName = (service: string) => `oar-${ORG}-${service}-${STAGE}`;
 
 export class OpenanimalrescueBackendStack extends cdk.Stack {
   private userPool: cognito.UserPool;
+  private cognitoAuthorizer: apigateway.CognitoUserPoolsAuthorizer; // Shared Authorizer
 
   constructor(scope: Construct, id: string, props?: cdk.StackProps) {
     super(scope, id, props);
+
+    // ============================
+    // Cognito User Pool and Client
+    // ============================
 
     // Cognito User Pool
     this.userPool = new cognito.UserPool(this, resourceName("userpool"), {
@@ -87,6 +92,22 @@ export class OpenanimalrescueBackendStack extends cdk.Stack {
         ],
       }
     );
+
+    // ============================
+    // Shared Cognito Authorizer
+    // ============================
+
+    // Initialize the shared Cognito Authorizer
+    this.cognitoAuthorizer = new apigateway.CognitoUserPoolsAuthorizer(
+      this,
+      resourceName("shared-authorizer"),
+      {
+        cognitoUserPools: [this.userPool],
+        authorizerName: resourceName("shared-authorizer"),
+        identitySource: "method.request.header.Authorization", // Default identity source
+      }
+    );
+    this.addTags(this.cognitoAuthorizer, "apigateway-authorizer");
 
     // ============================
     // DynamoDB Tables
@@ -161,6 +182,7 @@ export class OpenanimalrescueBackendStack extends cdk.Stack {
     this.addTags(usersTable, "dynamodb-users");
     dynamoTables.push(usersTable);
 
+    // Global Secondary Index for Users Table
     usersTable.addGlobalSecondaryIndex({
       indexName: "emails-index",
       partitionKey: { name: "email", type: dynamodb.AttributeType.STRING },
@@ -299,6 +321,10 @@ export class OpenanimalrescueBackendStack extends cdk.Stack {
       })
     );
 
+    // ============================
+    // Cognito User Pool Groups
+    // ============================
+
     // Create the "Staff" group
     const staffGroup = new cognito.CfnUserPoolGroup(
       this,
@@ -332,9 +358,24 @@ export class OpenanimalrescueBackendStack extends cdk.Stack {
     const roleMappings = new CfnJson(this, resourceName("roleMappings"), {
       value: {
         [cognitoPrincipalTag]: {
-          type: "Token",
-          ambiguousRoleResolution: "AuthenticatedRole",
-          identityProvider: cognitoPrincipalTag,
+          Type: "Rules",
+          AmbiguousRoleResolution: "AuthenticatedRole",
+          RulesConfiguration: {
+            Rules: [
+              {
+                Claim: "cognito:groups",
+                MatchType: "Contains",
+                Value: "Managers",
+                RoleARN: managersRole.roleArn,
+              },
+              {
+                Claim: "cognito:groups",
+                MatchType: "Contains",
+                Value: "Staff",
+                RoleARN: staffRole.roleArn,
+              },
+            ],
+          },
         },
       },
     });
@@ -383,6 +424,10 @@ export class OpenanimalrescueBackendStack extends cdk.Stack {
     });
     this.addTags(api, "apigateway");
 
+    // ============================
+    // Lambda Layers
+    // ============================
+
     // Lambda Layer for shared node modules
     const sharedUtilsLayer = new lambda.LayerVersion(
       this,
@@ -397,6 +442,7 @@ export class OpenanimalrescueBackendStack extends cdk.Stack {
     );
     this.addTags(sharedUtilsLayer, "lambda-layer");
 
+    // Lambda Layer for shared types
     const sharedTypesLayer = new lambda.LayerVersion(
       this,
       "SharedTypesLayer",
@@ -408,6 +454,7 @@ export class OpenanimalrescueBackendStack extends cdk.Stack {
         description: "Shared types for Node.js Lambda functions",
       }
     );
+    this.addTags(sharedTypesLayer, "lambda-types-layer");
 
     // ============================
     // Lambda Functions
@@ -424,7 +471,8 @@ export class OpenanimalrescueBackendStack extends cdk.Stack {
       {
         VERSION: version,
         STAGE: STAGE,
-      }
+      },
+      false // Public access
     );
 
     // Get Animal Lambda (Public access)
@@ -438,7 +486,7 @@ export class OpenanimalrescueBackendStack extends cdk.Stack {
       {
         SPECIES_LIST_SSM_PARAM: speciesListParam.parameterName,
       },
-      false // Unauthenticated access allowed
+      false // Public access
     );
 
     // Create Animal Lambda (Authenticated access)
@@ -452,7 +500,7 @@ export class OpenanimalrescueBackendStack extends cdk.Stack {
       {
         SPECIES_LIST_SSM_PARAM: speciesListParam.parameterName,
       },
-      true // Authenticated access required
+      true // Authenticated access
     );
     createAnimalLambda.addToRolePolicy(
       new iam.PolicyStatement({
@@ -472,7 +520,7 @@ export class OpenanimalrescueBackendStack extends cdk.Stack {
       {
         SPECIES_LIST_SSM_PARAM: speciesListParam.parameterName,
       },
-      true // Authenticated access required
+      true // Authenticated access
     );
 
     // Delete Animal Lambda (Authenticated access)
@@ -486,7 +534,7 @@ export class OpenanimalrescueBackendStack extends cdk.Stack {
       {
         SPECIES_LIST_SSM_PARAM: speciesListParam.parameterName,
       },
-      true // Authenticated access required
+      true // Authenticated access
     );
 
     // Get Animals Lambda (Public access)
@@ -500,7 +548,7 @@ export class OpenanimalrescueBackendStack extends cdk.Stack {
       {
         SPECIES_LIST_SSM_PARAM: speciesListParam.parameterName,
       },
-      false // Unauthenticated access allowed
+      false // Public access
     );
     getAnimalsLambda.addToRolePolicy(
       new iam.PolicyStatement({
@@ -521,7 +569,7 @@ export class OpenanimalrescueBackendStack extends cdk.Stack {
         EVENTS_TABLE_NAME: eventsTable.tableName,
         VENUE_TABLE_NAME: venuesTable.tableName,
       },
-      true // Authenticated access required
+      true // Authenticated access
     );
 
     // Create Venue Lambda (Authenticated access)
@@ -535,7 +583,7 @@ export class OpenanimalrescueBackendStack extends cdk.Stack {
       {
         TABLE_NAME: venuesTable.tableName,
       },
-      true // Authenticated access required
+      true // Authenticated access
     );
 
     // Volunteer Management Lambdas
@@ -620,12 +668,29 @@ export class OpenanimalrescueBackendStack extends cdk.Stack {
       UserPoolClientId: userPoolClient.userPoolClientId,
       IdentityPoolId: identityPool.ref,
       AnimalsTable: animalsTable.tableName,
+      EventsTable: eventsTable.tableName,
+      VenuesTable: venuesTable.tableName,
+      AdoptionsTable: adoptionsTable.tableName,
+      UsersTable: usersTable.tableName,
+      VolunteerSignUpsTable: volunteerSignUpTable.tableName,
       S3Bucket: s3Bucket.bucketName,
       APIGatewayURL: api.url,
     });
   }
 
-  // Updated createLambda method
+  /**
+   * Creates a Lambda function and integrates it with API Gateway.
+   *
+   * @param api - The API Gateway RestApi instance.
+   * @param tables - Array of DynamoDB tables to grant permissions.
+   * @param functionName - Name of the Lambda function.
+   * @param method - HTTP method (GET, POST, etc.).
+   * @param path - API Gateway resource path.
+   * @param layers - Array of Lambda layers to attach.
+   * @param extraEnv - Additional environment variables.
+   * @param authorized - Whether the endpoint requires authorization.
+   * @returns The created Lambda function.
+   */
   createLambda(
     api: apigateway.RestApi,
     tables: dynamodb.Table[],
@@ -651,6 +716,8 @@ export class OpenanimalrescueBackendStack extends cdk.Stack {
       }
     );
     this.addTags(func, `lambda-${functionName}`);
+
+    // Grant read/write permissions to DynamoDB tables
     tables.forEach((table) => {
       table.grantReadWriteData(func);
     });
@@ -672,13 +739,7 @@ export class OpenanimalrescueBackendStack extends cdk.Stack {
 
     const methodOptions: apigateway.MethodOptions = authorized
       ? {
-          authorizer: new apigateway.CognitoUserPoolsAuthorizer(
-            this,
-            resourceName(`${functionName}-authorizer`),
-            {
-              cognitoUserPools: [this.userPool],
-            }
-          ),
+          authorizer: this.cognitoAuthorizer, // Use the shared authorizer
           authorizationType: apigateway.AuthorizationType.COGNITO,
         }
       : {};
@@ -687,7 +748,12 @@ export class OpenanimalrescueBackendStack extends cdk.Stack {
     return func;
   }
 
-  // Class-level method to add tags to resources
+  /**
+   * Adds tags to an AWS resource.
+   *
+   * @param resource - The AWS resource to tag.
+   * @param service - The service name for tagging.
+   */
   addTags(resource: cdk.Resource, service: string) {
     cdk.Tags.of(resource).add("organisation", ORG);
     cdk.Tags.of(resource).add("stage", STAGE);
@@ -695,7 +761,11 @@ export class OpenanimalrescueBackendStack extends cdk.Stack {
     cdk.Tags.of(resource).add("service", service);
   }
 
-  // Helper method to add outputs
+  /**
+   * Adds CloudFormation outputs.
+   *
+   * @param outputs - A record of output keys and values.
+   */
   addOutputs(outputs: Record<string, string>) {
     for (const [key, value] of Object.entries(outputs)) {
       new cdk.CfnOutput(this, key, { value });
